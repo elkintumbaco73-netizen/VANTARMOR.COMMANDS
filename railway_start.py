@@ -1,0 +1,119 @@
+import runpy
+from pathlib import Path
+
+# Execute the compatibility repair before app.py imports command modules.
+import fix_security_typing
+
+from message_reactions_patch import patch_app as patch_message_features
+from reaction_commands_patch import patch_app_file as patch_reaction_commands
+from announcement_embed_patch import patch_app_file as patch_announcement
+from premium_backup_patch import patch_app_file as patch_premium_features
+from premium_key_commands_patch import patch_app_file as remove_premium_key_commands
+from global_commands_patch import patch_app_file as patch_global_commands
+from ticket_image_patch import patch_app_file as patch_ticket_image
+from premium_command_latency_patch import patch_ticket_image_system, patch_backup_command
+from blue_reaction_embeds_patch import patch_app_file as patch_blue_reaction_embeds
+from premium_security_patch import patch_app_file as patch_premium_security
+from dedupe_backup_command import remove_backup_commands
+from kill_roleplay_buttons_patch import patch_app_file as patch_kill_roleplay_buttons
+from giveaway_patch import patch_app_file as patch_giveaway
+from cookie_game_patch import patch_app_file as patch_cookie_game
+from separate_reaction_button_messages import patch_app_file as patch_separate_button_messages
+from channel_nuke import patch_app_file as patch_channel_nuke
+from website_runtime_features import install_bot_status_hooks, install_dynamic_tab_support, install_website_api, install_website_assets
+from persistent_web_sessions import install_persistent_sessions
+from guild_profile_settings import install_guild_profile_settings
+from profile_upload_support import install_profile_upload_support
+from brand_intro import install_brand_intro
+import web_server
+from web_server import start_website
+
+ROOT = Path(__file__).resolve().parent
+APP_FILE = ROOT / "app.py"
+WELCOME_FILE = ROOT / "welcome_system.py"
+SECURITY_FILE = ROOT / "premium_security_system.py"
+TICKET_IMAGE_FILE = ROOT / "ticket_image_system.py"
+GIVEAWAY_FILE = ROOT / "giveaway_system.py"
+WEB_APP_JS = ROOT / "website" / "assets" / "app.js"
+
+
+def fix_welcome_async_declaration():
+    source = WELCOME_FILE.read_text(encoding="utf-8")
+    broken, fixed = "\ndef configure_welcome(", "\nasync def configure_welcome("
+    if broken in source and fixed not in source:
+        WELCOME_FILE.write_text(source.replace(broken, fixed, 1), encoding="utf-8")
+        print("Corregida la declaración async de configure_welcome.")
+
+
+def fix_optional_import():
+    source = SECURITY_FILE.read_text(encoding="utf-8")
+    if "Optional[" in source and "from typing import Optional" not in source:
+        marker = "from pathlib import Path\n"
+        if marker not in source:
+            raise RuntimeError("No encontré el bloque de imports de premium_security_system.py")
+        SECURITY_FILE.write_text(source.replace(marker, marker + "from typing import Optional\n", 1), encoding="utf-8")
+        print("Corregido el import de Optional en premium_security_system.py.")
+
+
+def main():
+    if not APP_FILE.is_file():
+        raise FileNotFoundError(f"No encontré el archivo del bot: {APP_FILE}")
+    fix_welcome_async_declaration()
+    fix_optional_import()
+    remove_backup_commands(APP_FILE)
+    patch_message_features(APP_FILE)
+    patch_reaction_commands(APP_FILE)
+    patch_announcement(APP_FILE)
+    patch_premium_features(APP_FILE)
+    patch_backup_command(APP_FILE)
+    remove_premium_key_commands(APP_FILE)
+    patch_ticket_image(APP_FILE)
+    patch_ticket_image_system(TICKET_IMAGE_FILE)
+    patch_blue_reaction_embeds(APP_FILE)
+    patch_premium_security(APP_FILE)
+    patch_global_commands(APP_FILE)
+    patch_kill_roleplay_buttons(APP_FILE)
+    patch_giveaway(APP_FILE)
+    patch_cookie_game(APP_FILE)
+    patch_separate_button_messages(APP_FILE)
+    patch_channel_nuke(APP_FILE)
+    install_bot_status_hooks(APP_FILE)
+
+    final_source = APP_FILE.read_text(encoding="utf-8")
+    giveaway_source = GIVEAWAY_FILE.read_text(encoding="utf-8")
+    cookie_source = (ROOT / "cookie_game_system.py").read_text(encoding="utf-8")
+    required_app = (
+        "from giveaway_system import register_giveaway_commands, register_advanced_giveaway_commands, resume_giveaways",
+        "register_giveaway_commands(tree, client)",
+        "register_advanced_giveaway_commands(tree, client)",
+        "await resume_giveaways(client)",
+        "register_cookie_game(tree)",
+        "import website_runtime_features",
+        "register_channel_nuke(tree)",
+    )
+    missing = [item for item in required_app if item not in final_source]
+    if "class GiveawayEntryView(" not in giveaway_source:
+        missing.append("class GiveawayEntryView( in giveaway_system.py")
+    if 'return _register_giveaway(tree, bot, "sorteo-avanzado"' not in giveaway_source:
+        missing.append("/sorteo-avanzado registration in giveaway_system.py")
+    if "class CookieRaceView(" not in cookie_source or "name=\"game\"" not in cookie_source:
+        missing.append("/cookie game registration in cookie_game_system.py")
+    if "name=\"userinfo\"" not in cookie_source:
+        missing.append("/userinfo registration in cookie_game_system.py")
+    if missing:
+        raise RuntimeError(f"No se instalaron los componentes requeridos: {missing}")
+
+    install_guild_profile_settings(web_server.Handler)
+    install_profile_upload_support(web_server.Handler)
+    install_brand_intro()
+    install_persistent_sessions(web_server.Handler)
+    install_website_api(web_server.Handler)
+    install_website_assets()
+    install_dynamic_tab_support(WEB_APP_JS)
+    start_website()
+    print("Iniciando Vantarmor Commands...")
+    runpy.run_path(str(APP_FILE), run_name="__main__")
+
+
+if __name__ == "__main__":
+    main()
