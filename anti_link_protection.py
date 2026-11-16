@@ -37,12 +37,7 @@ class LinkAlertView(discord.ui.View):
         self.guild_id = guild_id
         self.member_id = member_id
         self.resolved = False
-        # URL buttons are regular Button instances; discord.ui.button() does not accept url=.
-        self.add_item(discord.ui.Button(
-            label="♿ Ir al servidor",
-            style=discord.ButtonStyle.link,
-            url=message_url,
-        ))
+        self.add_item(discord.ui.Button(label="♿ Ir al servidor", style=discord.ButtonStyle.link, url=message_url))
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if self.resolved:
@@ -113,9 +108,7 @@ async def on_message_link_filter(message: discord.Message):
     if message.guild is None or message.author.bot or not message.content:
         return
     state = _guild_config(message.guild.id)
-    if not state.get("anti_link", {}).get("enabled", False):
-        return
-    if not LINK_PATTERN.search(message.content):
+    if not state.get("anti_link", {}).get("enabled", False) or not LINK_PATTERN.search(message.content):
         return
 
     safe_excerpt = _neutralize_links(message.content)
@@ -126,7 +119,6 @@ async def on_message_link_filter(message: discord.Message):
         deleted = False
         print(f"No se pudo borrar el enlace en {message.guild.id}/{message.channel.id}: {type(exc).__name__}")
 
-    # The message jump URL opens the channel where the incident occurred.
     jump_url = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}"
     embed = discord.Embed(
         title="🔗 Alerta de enlace",
@@ -152,19 +144,11 @@ async def on_message_link_filter(message: discord.Message):
         except (discord.Forbidden, discord.HTTPException) as exc:
             print(f"No se pudo enviar alerta Anti-Link al propietario de {message.guild.id}: {type(exc).__name__}")
 
-    await _record(
-        message.guild,
-        "🔗 Enlace detectado",
-        f"**Responsable:** {message.author} (`{message.author.id}`)\n**Canal:** {message.channel.mention}\n**Mensaje:** {safe_excerpt}\n**Eliminado:** {'Sí' if deleted else 'No'}",
-    )
+    await _record(message.guild, "🔗 Enlace detectado", f"**Responsable:** {message.author} (`{message.author.id}`)\n**Canal:** {message.channel.mention}\n**Mensaje:** {safe_excerpt}\n**Eliminado:** {'Sí' if deleted else 'No'}")
 
 
 def register_anti_link(tree, client, guild_id: int):
-    """Register the link listener and guild-scoped boolean slash command."""
-    if not getattr(client, "anti_link_listener_registered", False):
-        client.add_listener(on_message_link_filter, "on_message")
-        client.anti_link_listener_registered = True
-
+    """Register the slash command only. Listener dispatch is inserted in app.py."""
     guild_obj = discord.Object(id=guild_id)
     if tree.get_command("anti-link", guild=guild_obj) is not None:
         return
