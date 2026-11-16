@@ -1,5 +1,6 @@
 import runpy
 from pathlib import Path
+from urllib.request import urlopen
 
 # Execute the compatibility repair before app.py imports command modules.
 import fix_security_typing
@@ -35,6 +36,22 @@ SECURITY_FILE = ROOT / "premium_security_system.py"
 TICKET_IMAGE_FILE = ROOT / "ticket_image_system.py"
 GIVEAWAY_FILE = ROOT / "giveaway_system.py"
 WEB_APP_JS = ROOT / "website" / "assets" / "app.js"
+# Pinned known-good app.py: recover the entry point if an incomplete patch overwrote it.
+KNOWN_GOOD_APP_URL = "https://raw.githubusercontent.com/elkintumbaco73-netizen/VANTARMOR.COMMANDS/8723a245e6f10c9714bee82275e22e7d94d612b9/app.py"
+
+
+def restore_app_source_if_broken():
+    source = APP_FILE.read_text(encoding="utf-8")
+    if "@client.event\nasync def on_message(message):" in source:
+        return
+
+    with urlopen(KNOWN_GOOD_APP_URL, timeout=15) as response:
+        restored = response.read().decode("utf-8")
+    if "@client.event\nasync def on_message(message):" not in restored or "client.run(TOKEN)" not in restored:
+        raise RuntimeError("No se pudo recuperar una versión válida de app.py; cancelo el deploy para evitar iniciar el bot con código incompleto.")
+
+    APP_FILE.write_text(restored, encoding="utf-8")
+    print("Recuperado app.py desde la versión estable para continuar las instalaciones de Railway.")
 
 
 def fix_welcome_async_declaration():
@@ -58,6 +75,7 @@ def fix_optional_import():
 def main():
     if not APP_FILE.is_file():
         raise FileNotFoundError(f"No encontré el archivo del bot: {APP_FILE}")
+    restore_app_source_if_broken()
     fix_welcome_async_declaration()
     fix_optional_import()
     remove_backup_commands(APP_FILE)
@@ -96,9 +114,9 @@ def main():
         missing.append("class GiveawayEntryView( in giveaway_system.py")
     if 'return _register_giveaway(tree, bot, "sorteo-avanzado"' not in giveaway_source:
         missing.append("/sorteo-avanzado registration in giveaway_system.py")
-    if "class CookieRaceView(" not in cookie_source or "name=\"game\"" not in cookie_source:
+    if "class CookieRaceView(" not in cookie_source or 'name="game"' not in cookie_source:
         missing.append("/cookie game registration in cookie_game_system.py")
-    if "name=\"userinfo\"" not in cookie_source:
+    if 'name="userinfo"' not in cookie_source:
         missing.append("/userinfo registration in cookie_game_system.py")
     if missing:
         raise RuntimeError(f"No se instalaron los componentes requeridos: {missing}")
